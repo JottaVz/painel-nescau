@@ -141,6 +141,7 @@ local Tabs = {"Aimbot", "ESP", "Misc", "Configs"}
 local tabFrames = {}
 local currentTab = nil
 
+-- Inicializar abas antes de qualquer operação
 for i, tabName in ipairs(Tabs) do
     local tabButton = Instance.new("TextButton", mainFrame)
     tabButton.Size = UDim2.new(0, 100, 0, 30)
@@ -164,7 +165,9 @@ for i, tabName in ipairs(Tabs) do
         if currentTab then tabFrames[currentTab].Visible = false end
         tabFrames[tabName].Visible = true
         currentTab = tabName
-        logAction("Switched to tab: " .. tabName)
+        if tabFrames.Configs then
+            logAction("Switched to tab: " .. tabName)
+        end
     end)
 end
 
@@ -175,7 +178,7 @@ local aimbotEnabled = false
 local espEnabled = false
 local teleportEnabled = false
 local teamCheckEnabled = true
-local targetNPCsEnabled = false -- Nova opção para mirar em NPCs
+local targetNPCsEnabled = false
 local fovRadius = 100
 local flySpeed = 50
 local silentAim = false
@@ -199,21 +202,28 @@ fovCircle.Thickness = 2
 fovCircle.Filled = false
 fovCircle.Name = generateHash("nescau_fov")
 
---// Função de Log Criptografado
+--// Função de Log Criptografado (Corrigida)
 local function logAction(action)
     local success, err = pcall(function()
         local encoded = HttpService:JSONEncode({action = action, time = os.clock(), owner = "Painel Nescau"})
-        local logLabel = Instance.new("TextLabel", tabFrames.Configs)
-        logLabel.Size = UDim2.new(1, -10, 0, 20)
-        logLabel.Position = UDim2.new(0, 5, 0, #tabFrames.Configs:GetChildren() * 25)
-        logLabel.Text = "[LOG] " .. action
-        logLabel.TextColor3 = Color3.new(1, 1, 1)
-        logLabel.BackgroundTransparency = 1
-        logLabel.TextSize = 12
-        writefile("nescau_hack_log.txt", encoded .. "\n")
+        if tabFrames.Configs then -- Verifica se a aba Configs existe
+            local logLabel = Instance.new("TextLabel", tabFrames.Configs)
+            logLabel.Size = UDim2.new(1, -10, 0, 20)
+            logLabel.Position = UDim2.new(0, 5, 0, #tabFrames.Configs:GetChildren() * 25)
+            logLabel.Text = "[LOG] " .. action
+            logLabel.TextColor3 = Color3.new(1, 1, 1)
+            logLabel.BackgroundTransparency = 1
+            logLabel.TextSize = 12
+        end
+        -- Tenta escrever no arquivo apenas se writefile estiver disponível
+        if writefile then
+            pcall(function()
+                writefile("nescau_hack_log.txt", encoded .. "\n")
+            end)
+        end
     end)
     if not success then
-        warn("Painel Nescau: Erro ao registrar log - " .. err)
+        warn("Painel Nescau: Erro ao registrar log - " .. tostring(err))
     end
 end
 
@@ -225,7 +235,7 @@ local function saveConfig()
             aimbotEnabled = aimbotEnabled,
             espEnabled = espEnabled,
             teamCheckEnabled = teamCheckEnabled,
-            targetNPCsEnabled = targetNPCsEnabled, -- Salvar nova opção
+            targetNPCsEnabled = targetNPCsEnabled,
             fovRadius = fovRadius,
             flySpeed = flySpeed,
             silentAim = silentAim,
@@ -241,23 +251,27 @@ local function saveConfig()
             owner = "Painel Nescau"
         }
         local encoded = HttpService:JSONEncode(config)
-        writefile("nescau_hack_config.txt", encoded)
+        if writefile then
+            pcall(function()
+                writefile("nescau_hack_config.txt", encoded)
+            end)
+        end
         logAction("Config saved by Painel Nescau")
     end)
     if not success then
-        warn("Painel Nescau: Erro ao salvar config - " .. err)
+        warn("Painel Nescau: Erro ao salvar config - " .. tostring(err))
     end
 end
 
 local function loadConfig()
     local success, err = pcall(function()
-        if isfile("nescau_hack_config.txt") then
+        if isfile and readfile and isfile("nescau_hack_config.txt") then
             local config = HttpService:JSONDecode(readfile("nescau_hack_config.txt"))
             flyEnabled = config.flyEnabled or false
             aimbotEnabled = config.aimbotEnabled or false
             espEnabled = config.espEnabled or false
             teamCheckEnabled = config.teamCheckEnabled or true
-            targetNPCsEnabled = config.targetNPCsEnabled or false -- Carregar nova opção
+            targetNPCsEnabled = config.targetNPCsEnabled or false
             fovRadius = config.fovRadius or 100
             flySpeed = config.flySpeed or 50
             silentAim = config.silentAim or false
@@ -274,7 +288,7 @@ local function loadConfig()
         end
     end)
     if not success then
-        warn("Painel Nescau: Erro ao carregar config - " .. err)
+        warn("Painel Nescau: Erro ao carregar config - " .. tostring(err))
     end
 end
 
@@ -282,7 +296,7 @@ end
 local Aimbot = {}
 function Aimbot:CalculateLead(target, bulletSpeed)
     local targetVelocity = target.Velocity or Vector3.new(0, 0, 0)
-    local distance = (target.Position - (LocalPlayer.Character and LocalPlayer.Character.HumanoidRootPart.Position or Vector3.new(0, 0, 0))).Magnitude
+    local distance = (target.Position - (LocalPlayer.Character and LocalPlayer.Character.HumanoidRootPart and LocalPlayer.Character.HumanoidRootPart.Position or Vector3.new(0, 0, 0))).Magnitude
     local timeToHit = distance / (bulletSpeed or 300)
     return target.Position + (targetVelocity * timeToHit)
 end
@@ -304,15 +318,12 @@ function Aimbot:GetClosestTarget()
     local closestTarget = nil
     local shortestDistance = math.huge
 
-    -- Suporte a jogadores, NPCs, e objetos interativos
     local targets = {}
-    -- Jogadores
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
             table.insert(targets, player.Character.HumanoidRootPart)
         end
     end
-    -- NPCs (modelos com Humanoid, mas sem Player associado)
     if targetNPCsEnabled then
         for _, obj in pairs(Workspace:GetDescendants()) do
             if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj:FindFirstChild("HumanoidRootPart") and not Players:GetPlayerFromCharacter(obj) then
@@ -320,7 +331,6 @@ function Aimbot:GetClosestTarget()
             end
         end
     end
-    -- Objetos com tag "Targetable"
     for _, obj in pairs(Workspace:GetDescendants()) do
         if obj:IsA("BasePart") and obj:FindFirstChild("Targetable") then
             table.insert(targets, obj)
@@ -344,8 +354,8 @@ function Aimbot:GetClosestTarget()
 end
 
 function Aimbot:Run()
-    if not aimbotEnabled or not LocalPlayer.Character then
-        fovCircle.Visible = streamerMode and false or true
+    if not aimbotEnabled or not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        fovCircle.Visible = streamerMode and false or aimbotEnabled
         return
     end
     fovCircle.Visible = streamerMode and false or true
@@ -434,7 +444,7 @@ local function removeESPForTarget(target)
 end
 
 local function updateESP()
-    if not espEnabled or streamerMode then
+    if not espEnabled or streamerMode or not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
         for target, _ in pairs(espObjects) do
             removeESPForTarget(target)
         end
@@ -453,7 +463,6 @@ local function updateESP()
         end
     end
     
-    -- Limitar renderização para desempenho
     local renderedCount = 0
     table.sort(targets, function(a, b)
         local aDist = (a.HumanoidRootPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude
@@ -585,7 +594,7 @@ function Bypass:FakeInputs()
 end
 
 function Bypass:Desync()
-    if not LocalPlayer.Character or not EventConfig.UpdatePosition then return end
+    if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") or not EventConfig.UpdatePosition then return end
     local currentPos = LocalPlayer.Character.HumanoidRootPart.Position
     local fakePos = currentPos + Vector3.new(math.random(-2, 2), 0, math.random(-2, 2))
     pcall(function()
@@ -610,7 +619,7 @@ function Bypass:SimulateLatency()
 end
 
 function Bypass:SpoofProperties()
-    if LocalPlayer.Character then
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
         pcall(function()
             LocalPlayer.Character.Humanoid.WalkSpeed = math.random(15, 17)
             LocalPlayer.Character.Humanoid.JumpPower = math.random(49, 51)
@@ -621,9 +630,8 @@ end
 
 --// Função para Mover o Player Voando
 local function fly()
-    if not LocalPlayer.Character then return end
-    local humanoidRootPart = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if not humanoidRootPart then return end
+    if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then return end
+    local humanoidRootPart = LocalPlayer.Character.HumanoidRootPart
 
     local bodyVelocity = humanoidRootPart:FindFirstChild(generateHash("nescau_velocity"))
     if flyEnabled then
@@ -655,6 +663,7 @@ end
 
 --// Função para Teleportar o Player para o Mouse
 local function teleportToMouse()
+    if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then return end
     local mousePos = UserInputService:GetMouseLocation()
     local camera = Workspace.CurrentCamera
     local ray = camera:ScreenPointToRay(mousePos.X, mousePos.Y)
@@ -663,12 +672,10 @@ local function teleportToMouse()
     raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
 
     local raycastResult = Workspace:Raycast(ray.Origin, ray.Direction * 500, raycastParams)
-    if raycastResult and LocalPlayer.Character then
-        local humanoidRootPart = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        if humanoidRootPart then
-            humanoidRootPart.CFrame = CFrame.new(raycastResult.Position + Vector3.new(0, 5, 0))
-            logAction("Teleported to mouse position by Painel Nescau")
-        end
+    if raycastResult then
+        local humanoidRootPart = LocalPlayer.Character.HumanoidRootPart
+        humanoidRootPart.CFrame = CFrame.new(raycastResult.Position + Vector3.new(0, 5, 0))
+        logAction("Teleported to mouse position by Painel Nescau")
     end
 end
 
@@ -765,7 +772,7 @@ createToggleButton(tabFrames.Aimbot, "Toggle Team Check", UDim2.new(0, 10, 0, 13
     teamCheckEnabled = not teamCheckEnabled
     logAction("Team Check: " .. (teamCheckEnabled and "ON" or "OFF") .. " by Painel Nescau")
 end)
-createToggleButton(tabFrames.Aimbot, "Toggle Target NPCs", UDim2.new(0, 10, 0, 170), function() -- Novo botão
+createToggleButton(tabFrames.Aimbot, "Toggle Target NPCs", UDim2.new(0, 10, 0, 170), function()
     targetNPCsEnabled = not targetNPCsEnabled
     logAction("Target NPCs: " .. (targetNPCsEnabled and "ON" or "OFF") .. " by Painel Nescau")
 end)
@@ -788,3 +795,64 @@ createToggleButton(tabFrames.ESP, "Toggle ESP", UDim2.new(0, 10, 0, 10), functio
     espEnabled = not espEnabled
     logAction("ESP: " .. (espEnabled and "ON" or "OFF") .. " by Painel Nescau")
 end)
+
+-- Misc Tab
+createToggleButton(tabFrames.Misc, "Toggle Fly", UDim2.new(0, 10, 0, 10), function()
+    flyEnabled = not flyEnabled
+    logAction("Fly: " .. (flyEnabled and "ON" or "OFF") .. " by Painel Nescau")
+end)
+createToggleButton(tabFrames.Misc, "Toggle Teleport", UDim2.new(0, 10, 0, 50), function()
+    teleportEnabled = not teleportEnabled
+    logAction("Teleport: " .. (teleportEnabled and "ON" or "OFF") .. " by Painel Nescau")
+end)
+createToggleButton(tabFrames.Misc, "Toggle Streamer Mode", UDim2.new(0, 10, 0, 90), function()
+    toggleStreamerMode()
+end)
+createToggleButton(tabFrames.Misc, "Toggle Desync", UDim2.new(0, 10, 0, 130), function()
+    desyncEnabled = not desyncEnabled
+    logAction("Desync: " .. (desyncEnabled and "ON" or "OFF") .. " by Painel Nescau")
+end)
+createSlider(tabFrames.Misc, "Fly Speed", UDim2.new(0, 10, 0, 170), 10, 100, flySpeed, function(value)
+    flySpeed = value
+    logAction("Fly Speed set to " .. value .. " by Painel Nescau")
+end)
+
+-- Configs Tab
+createToggleButton(tabFrames.Configs, "Save Config", UDim2.new(0, 10, 0, 10), function()
+    saveConfig()
+end)
+createToggleButton(tabFrames.Configs, "Load Config", UDim2.new(0, 10, 0, 50), function()
+    loadConfig()
+end)
+
+--// Inicialização
+findRemoteEvents()
+local protected = antiDetection()
+loadConfig()
+
+--// Loop Principal
+RunService.RenderStepped:Connect(function()
+    Aimbot:Run()
+    updateESP()
+    if flyEnabled then
+        fly()
+    end
+    if teleportEnabled then
+        if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+            teleportToMouse()
+        end
+    end
+    if desyncEnabled then
+        Bypass:Desync()
+    end
+end)
+
+--// Ativar Interface
+UserInputService.InputBegan:Connect(function(input)
+    if input.KeyCode == Enum.KeyCode.Insert then
+        mainFrame.Visible = not mainFrame.Visible
+        logAction("Toggled GUI visibility by Painel Nescau")
+    end
+end)
+
+logAction("Painel Nescau initialized")
